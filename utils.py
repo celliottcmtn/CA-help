@@ -4,19 +4,22 @@ import fitz  # PyMuPDF
 import streamlit as st
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
+from langchain.vectorstores import FAISS
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.docstore.document import Document
-
-# Set persistent vectorstore directory
-PERSIST_DIR = "vectorstore"
 
 # Load API key from Streamlit secrets
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 # Create embedding function
 embedding = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+
+# In-memory FAISS DB (you could persist if needed later)
+VECTORSTORE_PATH = "vectorstore/faiss_index"
+
+# Store current vector DB in session
+db = None
 
 def load_pdfs_from_folders(union_folders):
     """
@@ -48,8 +51,9 @@ def load_pdfs_from_folders(union_folders):
 
 def embed_documents(documents):
     """
-    Splits and embeds documents into a Chroma vector database stored locally.
+    Splits and embeds documents into an in-memory FAISS vectorstore.
     """
+    global db
     if not documents:
         st.warning("No documents to embed.")
         return None
@@ -57,31 +61,16 @@ def embed_documents(documents):
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     chunks = splitter.split_documents(documents)
 
-    db = Chroma.from_documents(
-        chunks,
-        embedding=embedding,
-        persist_directory=PERSIST_DIR
-    )
-    db.persist()
+    db = FAISS.from_documents(chunks, embedding)
     return db
-
-def get_vectorstore():
-    """
-    Loads the existing Chroma vector store, if available.
-    """
-    try:
-        return Chroma(persist_directory=PERSIST_DIR, embedding_function=embedding)
-    except Exception as e:
-        st.error("Could not load the vectorstore. Try uploading or embedding agreements first.")
-        return None
 
 def ask_question(query):
     """
-    Answers a user query using the vector store and OpenAI.
+    Answers a user query using the FAISS vector store and OpenAI.
     """
-    db = get_vectorstore()
+    global db
     if db is None:
-        return "No documents available. Please embed agreements first."
+        return "No documents available. Please select a union to load agreements first."
 
     retriever = db.as_retriever(search_kwargs={"k": 5})
     llm = ChatOpenAI(
