@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import fitz  # PyMuPDF
 import streamlit as st
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -7,56 +9,80 @@ from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.docstore.document import Document
 
-# Path to store vector database
+# Set persistent vectorstore directory
 PERSIST_DIR = "vectorstore"
 
 # Load API key from Streamlit secrets
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
-# Create embeddings using OpenAI
+# Create embedding function
 embedding = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 
-def load_pdfs(uploaded_files):
-    """Read uploaded PDF files and return a list of LangChain Document objects."""
+def load_pdfs_from_folders(union_folders):
+    """
+    Loads all .pdf files from specified subfolders within the 'agreements' directory.
+    Returns a list of LangChain Document objects.
+    """
+    base_path = Path("agreements")
     documents = []
-    for file in uploaded_files:
-        try:
-            pdf = fitz.open(stream=file.read(), filetype="pdf")
-            text = ""
-            for page in pdf:
-                text += page.get_text()
-            if text.strip():  # Only include if content exists
-                metadata = {"source": file.name}
-                documents.append(Document(page_content=text, metadata=metadata))
-        except Exception as e:
-            st.warning(f"Failed to process {file.name}: {e}")
+
+    for union in union_folders:
+        folder_path = base_path / union
+        if not folder_path.exists():
+            st.warning(f"Folder not found: {folder_path}")
+            continue
+
+        for file in folder_path.glob("*.pdf"):
+            try:
+                pdf = fitz.open(file)
+                text = ""
+                for page in pdf:
+                    text += page.get_text()
+                if text.strip():
+                    metadata = {"source": file.name, "union": union}
+                    documents.append(Document(page_content=text, metadata=metadata))
+            except Exception as e:
+                st.warning(f"Error reading {file.name}: {e}")
+
     return documents
 
 def embed_documents(documents):
-    """Split and embed documents into a persistent ChromaDB vector store."""
+    """
+    Splits and embeds documents into a Chroma vector database stored locally.
+    """
     if not documents:
         st.warning("No documents to embed.")
         return None
+
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     chunks = splitter.split_documents(documents)
-    db = Chroma.from_documents(chunks, embedding=embedding, persist_directory=PERSIST_DIR)
+
+    db = Chroma.from_documents(
+        chunks,
+        embedding=embedding,
+        persist_directory=PERSIST_DIR
+    )
     db.persist()
     return db
 
 def get_vectorstore():
-    """Load an existing Chroma vectorstore (or raise error if not initialized)."""
+    """
+    Loads the existing Chroma vector store, if available.
+    """
     try:
         return Chroma(persist_directory=PERSIST_DIR, embedding_function=embedding)
     except Exception as e:
-        st.error("Could not load the vectorstore. Did you upload and embed PDFs?")
+        st.error("Could not load the vectorstore. Try uploading or embedding agreements first.")
         return None
 
 def ask_question(query):
-    """Run a Retrieval QA pipeline using the embedded documents and OpenAI."""
+    """
+    Answers a user query using the vector store and OpenAI.
+    """
     db = get_vectorstore()
     if db is None:
-        return "No documents available. Please upload and embed PDFs first."
-    
+        return "No documents available. Please embed agreements first."
+
     retriever = db.as_retriever(search_kwargs={"k": 5})
     llm = ChatOpenAI(
         model_name="gpt-3.5-turbo",
