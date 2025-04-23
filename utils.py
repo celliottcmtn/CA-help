@@ -7,18 +7,16 @@ from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
 from langchain.docstore.document import Document
 
 # Load API key from Streamlit secrets
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
-# Create embedding function
+# Set up embeddings
 embedding = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 
-# In-memory FAISS DB (you could persist if needed later)
-VECTORSTORE_PATH = "vectorstore/faiss_index"
-
-# Store current vector DB in session
+# In-memory FAISS store
 db = None
 
 def load_pdfs_from_folders(union_folders):
@@ -51,7 +49,7 @@ def load_pdfs_from_folders(union_folders):
 
 def embed_documents(documents):
     """
-    Splits and embeds documents into an in-memory FAISS vectorstore.
+    Splits and embeds documents into a FAISS vectorstore (in-memory).
     """
     global db
     if not documents:
@@ -66,11 +64,11 @@ def embed_documents(documents):
 
 def ask_question(query):
     """
-    Answers a user query using the FAISS vector store and OpenAI.
+    Uses FAISS + OpenAI + custom prompt to answer a question using the agreements.
     """
     global db
     if db is None:
-        return "No documents available. Please select a union to load agreements first."
+        return "No documents available. Please select and embed agreements first."
 
     retriever = db.as_retriever(search_kwargs={"k": 5})
     llm = ChatOpenAI(
@@ -79,10 +77,29 @@ def ask_question(query):
         openai_api_key=OPENAI_API_KEY
     )
 
+    custom_prompt = PromptTemplate.from_template("""
+You are a knowledgeable assistant that helps management understand the application of collective agreements. 
+Use the following excerpts of agreement text to answer the user’s question.
+
+- Only use the provided context.
+- If the answer is not clearly supported in the agreements, say: "The agreement does not provide a clear answer to this."
+- In your response, specify which union agreement(s) and article number(s) are relevant.
+- If multiple sections apply, cite them clearly and explain how they relate.
+- Be clear, concise, and avoid legal jargon when possible.
+
+Context:
+{context}
+
+Question: {question}
+
+Helpful Answer:
+""")
+
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,
         retriever=retriever,
-        return_source_documents=True
+        return_source_documents=True,
+        chain_type_kwargs={"prompt": custom_prompt}
     )
 
     try:
