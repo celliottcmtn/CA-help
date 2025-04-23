@@ -1,6 +1,7 @@
 streamlit
-langchain
 openai
+langchain==0.0.340
 chromadb
 PyMuPDF
 python-dotenv
+tiktoken
