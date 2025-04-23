@@ -1,7 +1,7 @@
 streamlit
 openai
 langchain==0.0.340
-chromadb
+faiss-cpu
 PyMuPDF
 python-dotenv
 tiktoken
