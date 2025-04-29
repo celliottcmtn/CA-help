@@ -1,6 +1,6 @@
 streamlit
 openai
-langchain==0.0.340
+langchain==0.1.0
 faiss-cpu
 PyMuPDF
 python-dotenv
