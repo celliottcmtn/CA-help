@@ -1,7 +1,6 @@
 streamlit
-openai
-langchain==0.2.5
+pymupdf
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-community>=0.0.5
 faiss-cpu
-PyMuPDF
-python-dotenv
-tiktoken
